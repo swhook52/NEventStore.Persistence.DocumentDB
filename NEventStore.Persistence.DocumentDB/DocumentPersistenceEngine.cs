@@ -26,7 +26,7 @@ namespace NEventStore.Persistence.DocumentDB
         public DocumentPersistenceOptions Options { get; private set; }
 
         private Database Database { get; set; }
-        
+
         public void DeleteStream(string bucketId, string streamId)
         {
             throw new NotImplementedException();
@@ -44,17 +44,53 @@ namespace NEventStore.Persistence.DocumentDB
 
         public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
         {
-            throw new NotImplementedException();
+            var collection = EnsureCollection(Options.CommitCollectionName).Result;
+            var documents = Client.CreateDocumentQuery<Commit>(
+                collection.DocumentsLink,
+                $"SELECT * FROM {Options.CommitCollectionName}" +
+                "WHERE " +
+                $"{Options.CommitCollectionName}.CheckpointToken = '{checkpointToken}'");
+
+            return documents;
         }
 
         public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
         {
-            throw new NotImplementedException();
+            var collection = EnsureCollection(Options.CommitCollectionName).Result;
+            var documents = Client.CreateDocumentQuery<Commit>(
+                collection.DocumentsLink,
+                $"SELECT * FROM {Options.CommitCollectionName}" +
+                "WHERE " +
+                $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
+                $"{Options.CommitCollectionName}.CommitStamp >= {start}");
+
+            return documents;
+        }
+
+        public IEnumerable<ICommit> GetFrom(string bucketId, string checkpointToken)
+        {
+            var collection = EnsureCollection(Options.CommitCollectionName).Result;
+            var documents = Client.CreateDocumentQuery<Commit>(
+                collection.DocumentsLink,
+                $"SELECT * FROM {Options.CommitCollectionName}" +
+                "WHERE " +
+                $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
+                $"{Options.CommitCollectionName}.CheckpointToken = '{checkpointToken}'");
+
+            return documents;
         }
 
         public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
         {
-            throw new NotImplementedException();
+            var collection = EnsureCollection(Options.CommitCollectionName).Result;
+            var documents = Client.CreateDocumentQuery<Commit>(
+                collection.DocumentsLink,
+                $"SELECT * FROM {Options.CommitCollectionName}" +
+                "WHERE " +
+                $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
+                $"({Options.CommitCollectionName}.CommitStamp BETWEEN {start} AND {end})");
+
+            return documents;
         }
 
         public IEnumerable<ICommit> GetUndispatchedCommits()
@@ -62,11 +98,20 @@ namespace NEventStore.Persistence.DocumentDB
             throw new NotImplementedException();
         }
 
-        public async void Initialize()
+        public void Initialize()
         {
-            var databases = await this.Client.ReadDatabaseFeedAsync();
-            this.Database = databases.Where(d => d.Id == this.Options.DatabaseName).FirstOrDefault()
-                    ?? await this.Client.CreateDatabaseAsync(new Database { Id = this.Options.DatabaseName });
+            var databases = Client.ReadDatabaseFeedAsync().Result;
+            Database = databases.FirstOrDefault(d => d.Id == Options.DatabaseName);
+
+            if (Database == null)
+            {
+                Database = Client.CreateDatabaseAsync(new Database {Id = Options.DatabaseName}).Result;
+            }
+
+            if (Database == null)
+            {
+                throw new NullReferenceException("Database cannot be null");
+            }
         }
 
         public bool IsDisposed
@@ -136,17 +181,27 @@ namespace NEventStore.Persistence.DocumentDB
 
         public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
         {
-            throw new NotImplementedException();
+            var collection = EnsureCollection(Options.CommitCollectionName).Result;
+            var documents = Client.CreateDocumentQuery<Commit>(
+                collection.DocumentsLink,
+                $"SELECT * FROM {Options.CommitCollectionName} " +
+                "WHERE " +
+                $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
+                $"{Options.CommitCollectionName}.StreamId = '{streamId}' AND " +
+                $"({Options.CommitCollectionName}.StreamRevision BETWEEN {minRevision} AND {maxRevision})");
+
+            var commits = documents.ToArray();
+            return commits.AsEnumerable();
         }
 
         public bool AddSnapshot(ISnapshot snapshot)
         {
-            throw new NotImplementedException();
+            return false;
         }
 
         public ISnapshot GetSnapshot(string bucketId, string streamId, int maxRevision)
         {
-            throw new NotImplementedException();
+            return null;
         }
 
         public IEnumerable<IStreamHead> GetStreamsToSnapshot(string bucketId, int maxThreshold)
@@ -189,10 +244,15 @@ namespace NEventStore.Persistence.DocumentDB
 
         private async Task<DocumentCollection> EnsureCollection(string collectionId)
         {
-            var collections = await this.Client.ReadDocumentCollectionFeedAsync(this.Database.CollectionsLink);
+            if (Database == null)
+            {
+                Initialize();
+            }
 
-            return collections.Where(c => c.Id == collectionId).FirstOrDefault()
-                ?? await this.Client.CreateDocumentCollectionAsync(this.Database.SelfLink, new DocumentCollection { Id = collectionId });
+            var collections = await Client.ReadDocumentCollectionFeedAsync(Database.CollectionsLink);
+
+            return collections.FirstOrDefault(c => c.Id == collectionId)
+                ?? await Client.CreateDocumentCollectionAsync(Database.SelfLink, new DocumentCollection { Id = collectionId });
         }
 
         private DocumentCommit LoadSavedCommit(CommitAttempt attempt)
@@ -213,18 +273,19 @@ namespace NEventStore.Persistence.DocumentDB
         {
             TryExecute(() =>
             {
-                var collection = this.EnsureCollection(this.Options.StreamHeadCollectionName).Result;
-                var documents = this.Client.ReadDocumentFeedAsync(collection.DocumentsLink).Result;
+                var collection = EnsureCollection(Options.StreamHeadCollectionName).Result;
+                var documents = Client.ReadDocumentFeedAsync(collection.DocumentsLink).Result;
                 var documentId = DocumentStreamHead.GetStreamHeadId(updated.BucketId, updated.StreamId);
 
-                var streamHead = documents.Where(d => d.Id == documentId).FirstOrDefault() ?? updated;
+                var streamHead = documents.FirstOrDefault(d => d.Id == documentId) ?? updated;
 
                 streamHead.HeadRevision = updated.HeadRevision;
 
                 if (updated.SnapshotRevision > 0)
                     streamHead.SnapshotRevision = updated.SnapshotRevision;
 
-                return this.Client.ReplaceDocumentAsync(streamHead).Result;
+                var documentToUpdate = Client.CreateDocumentAsync(collection.SelfLink, streamHead).Result;
+                return Client.ReplaceDocumentAsync(documentToUpdate).Result;
            });
         }
     }
