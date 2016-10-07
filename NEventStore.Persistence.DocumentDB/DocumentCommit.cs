@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Newtonsoft.Json;
 
 namespace NEventStore.Persistence.DocumentDB
 {
     class DocumentCommit
     {
+        // This lowercase id property is needed for DocumentDB. This will be the actual guid it defines for the document.
+        public string id { get; set; }
+
         public string Id { get; set; }
         public string BucketId { get; set; }
         public string StreamId { get; set; }

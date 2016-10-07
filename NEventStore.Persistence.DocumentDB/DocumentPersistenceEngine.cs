@@ -45,52 +45,52 @@ namespace NEventStore.Persistence.DocumentDB
         public IEnumerable<ICommit> GetFrom(string checkpointToken = null)
         {
             var collection = EnsureCollection(Options.CommitCollectionName).Result;
-            var documents = Client.CreateDocumentQuery<Commit>(
+            var documents = Client.CreateDocumentQuery<DocumentCommit>(
                 collection.DocumentsLink,
                 $"SELECT * FROM {Options.CommitCollectionName}" +
                 "WHERE " +
                 $"{Options.CommitCollectionName}.CheckpointToken = '{checkpointToken}'");
 
-            return documents;
+            return documents.ToArray().Select(p => p.ToCommit(Serializer));
         }
 
         public IEnumerable<ICommit> GetFrom(string bucketId, DateTime start)
         {
             var collection = EnsureCollection(Options.CommitCollectionName).Result;
-            var documents = Client.CreateDocumentQuery<Commit>(
+            var documents = Client.CreateDocumentQuery<DocumentCommit>(
                 collection.DocumentsLink,
                 $"SELECT * FROM {Options.CommitCollectionName}" +
                 "WHERE " +
                 $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
                 $"{Options.CommitCollectionName}.CommitStamp >= {start}");
 
-            return documents;
+            return documents.ToArray().Select(p => p.ToCommit(Serializer));
         }
 
         public IEnumerable<ICommit> GetFrom(string bucketId, string checkpointToken)
         {
             var collection = EnsureCollection(Options.CommitCollectionName).Result;
-            var documents = Client.CreateDocumentQuery<Commit>(
+            var documents = Client.CreateDocumentQuery<DocumentCommit>(
                 collection.DocumentsLink,
                 $"SELECT * FROM {Options.CommitCollectionName}" +
                 "WHERE " +
                 $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
                 $"{Options.CommitCollectionName}.CheckpointToken = '{checkpointToken}'");
 
-            return documents;
+            return documents.ToArray().Select(p => p.ToCommit(Serializer));
         }
 
         public IEnumerable<ICommit> GetFromTo(string bucketId, DateTime start, DateTime end)
         {
             var collection = EnsureCollection(Options.CommitCollectionName).Result;
-            var documents = Client.CreateDocumentQuery<Commit>(
+            var documents = Client.CreateDocumentQuery<DocumentCommit>(
                 collection.DocumentsLink,
                 $"SELECT * FROM {Options.CommitCollectionName}" +
                 "WHERE " +
                 $"{Options.CommitCollectionName}.BucketId = '{bucketId}' AND " +
                 $"({Options.CommitCollectionName}.CommitStamp BETWEEN {start} AND {end})");
 
-            return documents;
+            return documents.ToArray().Select(p => p.ToCommit(Serializer));
         }
 
         public IEnumerable<ICommit> GetUndispatchedCommits()
@@ -182,7 +182,7 @@ namespace NEventStore.Persistence.DocumentDB
         public IEnumerable<ICommit> GetFrom(string bucketId, string streamId, int minRevision, int maxRevision)
         {
             var collection = EnsureCollection(Options.CommitCollectionName).Result;
-            var documents = Client.CreateDocumentQuery<Commit>(
+            var documents = Client.CreateDocumentQuery<DocumentCommit>(
                 collection.DocumentsLink,
                 $"SELECT * FROM {Options.CommitCollectionName} " +
                 "WHERE " +
@@ -190,8 +190,7 @@ namespace NEventStore.Persistence.DocumentDB
                 $"{Options.CommitCollectionName}.StreamId = '{streamId}' AND " +
                 $"({Options.CommitCollectionName}.StreamRevision BETWEEN {minRevision} AND {maxRevision})");
 
-            var commits = documents.ToArray();
-            return commits.AsEnumerable();
+            return documents.ToArray().Select(p => p.ToCommit(Serializer));
         }
 
         public bool AddSnapshot(ISnapshot snapshot)
